@@ -1,0 +1,14 @@
+{
+  "projekt": "Konwerter JSON do YAML",
+  "przedmiot": "Modelowanie i Architektura Systemow Informatycznych",
+  "ocenaOczekiwana": 5.0,
+  "czyUkonczony": false,
+  "autorzy": [
+    "Tomislaw",
+    "Jan Kowalski"
+  ],
+  "szczegoly": {
+    "technologia": "Java",
+    "narzedzie": "ANTLR v4"
+  }
+}
