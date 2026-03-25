@@ -1,17 +1,26 @@
 public class YamlConverterVisitor extends JSONBaseVisitor<String> {
 
     // Zmienna do śledzenia aktualnego poziomu wcięć (niezbędne w YAML)
-    private int indentLevel = 0;
+    // ZMIANA 1: Zaczynamy od -1, aby root obiektu miał 0 spacji wcięcia
+    private int indentLevel = -1;
 
     // Metoda pomocnicza do generowania spacji
     private String getIndent() {
+        // Zabezpieczenie, aby nie generować ujemnej liczby spacji
+        if (indentLevel <= 0) return "";
         return "  ".repeat(indentLevel);
     }
-
     @Override
     public String visitJson(JSONParser.JsonContext ctx) {
+        String result = visit(ctx.value());
+
         // Punkt startowy - odwiedzamy główną wartość i usuwamy ewentualne białe znaki na początku/końcu
-        return visit(ctx.value()).trim();
+        // ZMIANA 2: Zamiast .trim() usuwamy TYLKO pierwszy znak nowej linii.
+        // Dzięki temu nie niszczymy struktury wcięć pierwszej linijki!
+        if (result.startsWith("\n")) {
+            return result.substring(1);
+        }
+        return result;
     }
 
     @Override
