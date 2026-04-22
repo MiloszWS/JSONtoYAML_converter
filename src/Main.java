@@ -1,24 +1,114 @@
 import org.antlr.v4.runtime.*;
 import org.antlr.v4.runtime.misc.ParseCancellationException;
 
-import java.io.IOException;
+import javax.swing.*;
+import javax.swing.border.TitledBorder;
+import java.awt.*;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.dnd.*;
+import java.io.File;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
-import java.util.Scanner;
 
 public class Main {
+
     public static void main(String[] args) {
-        String inputFilePath = "weirdo.json";
-        String outputFilePath = inputFilePath.replace(".json", ".yaml");
-        //String filePath = "D:\\Studia 2\\MiASI_project\\JSONtoYAML\\mistakes.json";
-
         try {
-            //Reading CharStream from the input file
-            CharStream input = CharStreams.fromFileName(inputFilePath);
+            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+        } catch (Exception e) {
+            System.err.println("Nie udało się załadować systemowego wyglądu.");
+        }
 
+        SwingUtilities.invokeLater(Main::createAndShowGUI);
+    }
 
+    private static void createAndShowGUI() {
+        // --- 1. GŁÓWNE OKNO ---
+        JFrame frame = new JFrame("JSON to YAML Converter & Linter");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setSize(1000, 650);
+        frame.setLayout(new BorderLayout(10, 10));
+        frame.getContentPane().setBackground(new Color(245, 246, 250));
+
+        // --- 2. POLA TEKSTOWE ---
+        JTextArea jsonInput = new JTextArea("{\n  \"test\": \"Przeciągnij tu plik .json lub wklej tekst\"\n}");
+        jsonInput.setFont(new Font("Consolas", Font.PLAIN, 14));
+        jsonInput.setMargin(new Insets(10, 10, 10, 10));
+
+        JTextArea yamlOutput = new JTextArea("Tutaj pojawi się wynik YAML lub błędy...");
+        yamlOutput.setEditable(false);
+        yamlOutput.setBackground(new Color(40, 44, 52));
+        yamlOutput.setForeground(new Color(171, 178, 191));
+        yamlOutput.setFont(new Font("Consolas", Font.PLAIN, 14));
+        yamlOutput.setMargin(new Insets(10, 10, 10, 10));
+
+        JScrollPane scrollLeft = new JScrollPane(jsonInput);
+        scrollLeft.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(Color.LIGHT_GRAY), "Wejście (JSON)", TitledBorder.LEFT, TitledBorder.TOP, new Font("Arial", Font.BOLD, 12)));
+
+        JScrollPane scrollRight = new JScrollPane(yamlOutput);
+        scrollRight.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createLineBorder(Color.LIGHT_GRAY), "Wyjście (YAML / Logi)", TitledBorder.LEFT, TitledBorder.TOP, new Font("Arial", Font.BOLD, 12), Color.DARK_GRAY));
+
+        // --- 3. PRZYCISK ---
+        JButton processButton = new JButton("Konwertuj do YAML");
+        processButton.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        processButton.setBackground(new Color(0, 123, 255));
+        processButton.setForeground(Color.WHITE);
+        processButton.setFocusPainted(false);
+        processButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        processButton.setPreferredSize(new Dimension(200, 40));
+
+        // Akcja przycisku - przekazujemy też 'frame', by móc wyświetlić na nim Popup
+        processButton.addActionListener(e -> {
+            String result = processJsonPipeline(jsonInput.getText(), frame);
+            yamlOutput.setText(result);
+        });
+
+        // --- 4. MAGIA DRAG & DROP ---
+        jsonInput.setDropTarget(new DropTarget() {
+            public synchronized void drop(DropTargetDropEvent evt) {
+                try {
+                    evt.acceptDrop(DnDConstants.ACTION_COPY);
+                    List<File> droppedFiles = (List<File>) evt.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+
+                    if (!droppedFiles.isEmpty()) {
+                        File file = droppedFiles.get(0);
+                        String content = new String(Files.readAllBytes(file.toPath()));
+                        jsonInput.setText(content);
+
+                        // Automatycznie odpalamy konwersję po wrzuceniu pliku!
+                        yamlOutput.setText(processJsonPipeline(content, frame));
+                    }
+                } catch (Exception ex) {
+                    yamlOutput.setText("Błąd odczytu pliku:\n" + ex.getMessage());
+                }
+            }
+        });
+
+        // --- 5. UKŁADANIE OKNA ---
+        JPanel textPanel = new JPanel(new GridLayout(1, 2, 15, 0));
+        textPanel.setOpaque(false);
+        textPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        textPanel.add(scrollLeft);
+        textPanel.add(scrollRight);
+
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.setOpaque(false);
+        buttonPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 15, 0));
+        buttonPanel.add(processButton);
+
+        frame.add(textPanel, BorderLayout.CENTER);
+        frame.add(buttonPanel, BorderLayout.SOUTH);
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
+    }
+
+    // --- TWOJA ZMODYFIKOWANA LOGIKA (Zastąpiony Scanner) ---
+    public static String processJsonPipeline(String jsonText, Component parentFrame) {
+        try {
+            // 1. Syntax Check (Czytanie ze Stringa zamiast z pliku)
+            CharStream input = CharStreams.fromString(jsonText);
             JSONLexer lexer = new JSONLexer(input);
             lexer.removeErrorListeners();
             lexer.addErrorListener(new ThrowingErrorListener());
@@ -29,62 +119,57 @@ public class Main {
             parser.removeErrorListeners();
             parser.addErrorListener(new ThrowingErrorListener());
 
-            //JSON Syntax verification
             JSONParser.JsonContext tree = parser.json();
 
-            System.out.println("File '" + inputFilePath + "' is correct. Starting conversion");
-            System.out.println("Syntax tree: " + tree.toStringTree(parser));
-
-            //Semantic analysis
+            // 2. Semantic Analysis
             JsonLinterVisitor linter = new JsonLinterVisitor();
             linter.visit(tree);
 
-            //CHECK FOR CRITICAL ERRORS (FATAL)
+            // CHECK FOR CRITICAL ERRORS (FATAL)
             List<String> criticalErrors = linter.getCriticalErrors();
             if (!criticalErrors.isEmpty()) {
-                System.err.println("\nFATAL SEMANTIC ERRORS DETECTED:");
+                StringBuilder errBuilder = new StringBuilder("❌ FATAL SEMANTIC ERRORS DETECTED:\n\n");
                 for (String err : criticalErrors) {
-                    System.err.println(" - " + err);
+                    errBuilder.append(" - ").append(err).append("\n");
                 }
-                System.err.println("\nConversion aborted. YAML specification does not allow these structures.");
-                return; // Hard stop - end program
+                errBuilder.append("\nConversion aborted. YAML specification does not allow these structures.");
+                return errBuilder.toString(); // Zwracamy błąd do prawego okna
             }
 
-            //CHECK FOR WARNINGS (USER DECISION)
+            // CHECK FOR WARNINGS (USER DECISION - ZAMIAST SCANNERA UŻYWAMY POPUPU)
             List<String> warnings = linter.getWarnings();
-
             if (!warnings.isEmpty()) {
-                System.out.println("\nWARNINGS DETECTED DURING SEMANTIC ANALYSIS:");
+                StringBuilder warnBuilder = new StringBuilder("WARNINGS DETECTED DURING SEMANTIC ANALYSIS:\n\n");
                 for (String w : warnings) {
-                    System.out.println(" - " + w);
+                    warnBuilder.append(" - ").append(w).append("\n");
                 }
+                warnBuilder.append("\nDo you want to proceed with YAML conversion anyway?");
 
-                System.out.print("\nDo you want to proceed with YAML conversion anyway? (Y/N): ");
-                Scanner scanner = new Scanner(System.in);
-                String answer = scanner.nextLine().trim().toUpperCase();
+                // Wyskakujące okienko z zapytaniem (Zastępuje Scanner System.in)
+                int userChoice = JOptionPane.showConfirmDialog(
+                        parentFrame,
+                        warnBuilder.toString(),
+                        "Ostrzeżenia analizatora",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE
+                );
 
-                if (!answer.equals("Y")) {
-                    System.out.println("Conversion aborted by user.");
-                    return;
+                // Jeśli użytkownik kliknie "Nie" lub zamknie okienko
+                if (userChoice != JOptionPane.YES_OPTION) {
+                    return "⚠️ Conversion aborted by user.";
                 }
-                System.out.println("Proceeding with conversion...\n");
             }
 
-            //Transformation into .yaml format
+            // 3. Transformation into .yaml format
             YamlConverterVisitor visitor = new YamlConverterVisitor();
             String yamlOutput = visitor.visit(tree);
 
-            Path outputPath = Paths.get(outputFilePath);
-            Files.writeString(outputPath, yamlOutput);
+            return "✅ Konwersja zakończona sukcesem!\n\n" + yamlOutput;
 
-            System.out.println("Success! Converted filed was saved as: " + outputFilePath);
-
-        } catch (IOException e) {
-            System.err.println("FileError: Please check is there a file from Your path location." + e.getMessage());
         } catch (ParseCancellationException e) {
-            System.err.println("There is syntax error in file: '" + inputFilePath + "'!");
-            System.err.println(e.getMessage());
-            System.err.println("Conversion stopped.");
+            return "❌ BŁĄD SKŁADNIOWY (SYNTAX ERROR):\n\n" + e.getMessage();
+        } catch (Exception e) {
+            return "Wystąpił nieoczekiwany błąd:\n" + e.getMessage();
         }
     }
 }
